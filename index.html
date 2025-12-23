@@ -1,259 +1,234 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GeoQuest: Final Fix</title>
-    
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link href="https://unpkg.com/mapillary-js@4.1.0/dist/mapillary.css" rel="stylesheet" />
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;700;900&display=swap" rel="stylesheet">
-    
-    <style>
-        :root { --bg-deep: #0f1020; --accent-green: #6bd451; }
-        body { margin: 0; padding: 0; font-family: 'Outfit', sans-serif; background: var(--bg-deep); color: white; overflow: hidden; }
+<meta charset="UTF-8">
+<title>GeoQuest — Stable Build</title>
 
-        /* DEBUG LOG - VISIBLE ON SCREEN */
-        #debug-log {
-            position: fixed; top: 10px; left: 10px; z-index: 10000;
-            background: rgba(0,0,0,0.8); padding: 10px; border-radius: 5px;
-            font-family: monospace; font-size: 12px; color: #0f0; pointer-events: none;
-            max-width: 300px;
-        }
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-        #mly { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; background: #000; }
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://unpkg.com/mapillary-js@4.1.0/dist/mapillary.css">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;700;900&display=swap" rel="stylesheet">
 
-        .app-header {
-            position: fixed; top: 0; left: 0; width: 100%; height: 60px;
-            background: rgba(21, 21, 37, 0.95); display: flex; align-items: center; justify-content: center; z-index: 5000;
-            border-bottom: 1px solid rgba(255,255,255,0.1);
-        }
-        .logo-text { font-weight: 900; letter-spacing: 2px; }
+<style>
+:root { --bg:#0f1020; --green:#6bd451; }
+body { margin:0; font-family:Outfit; background:var(--bg); color:#fff; overflow:hidden; }
 
-        .hud-top { position: absolute; top: 80px; width: 100%; z-index: 100; pointer-events: none; display: flex; justify-content: center; }
-        .timer-pill { background: #5b3bb8; padding: 10px 30px; border-radius: 30px; font-weight: 900; font-size: 1.5rem; box-shadow: 0 5px 15px rgba(0,0,0,0.4); }
+#mly { position:absolute; inset:0; background:#000; }
 
-        .guess-widget {
-            position: absolute; bottom: 20px; right: 20px; width: 320px; height: 240px; z-index: 200;
-            background: #fff; border: 4px solid white; border-radius: 12px;
-            display: flex; flex-direction: column;
-        }
-        #guess-map { flex: 1; cursor: crosshair; }
-        #guess-btn {
-            position: absolute; bottom: 15px; left: 50%; transform: translateX(-50%);
-            background: var(--accent-green); color: white; border: none; padding: 12px 50px; border-radius: 50px;
-            font-weight: 900; cursor: pointer; display: none; z-index: 1001;
-        }
+#loader {
+    position:fixed; inset:0; z-index:9999;
+    display:flex; flex-direction:column;
+    justify-content:center; align-items:center;
+    background:#0f1020;
+}
+.spinner {
+    width:40px; height:40px;
+    border:4px solid rgba(255,255,255,.15);
+    border-top-color:var(--green);
+    border-radius:50%;
+    animation:spin 1s linear infinite;
+}
+@keyframes spin { to { transform:rotate(360deg); } }
 
-        #result-modal {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(15, 16, 32, 0.98); z-index: 2000;
-            display: none; flex-direction: column; align-items: center; justify-content: center;
-        }
-        .result-card { width: 90%; max-width: 800px; background: #1b1b3a; border-radius: 16px; overflow: hidden; }
-        #result-map { height: 400px; width: 100%; }
-        .result-footer { padding: 20px; text-align: center; }
-        .next-btn { background: var(--accent-green); border: none; padding: 15px 40px; border-radius: 50px; font-weight: 900; cursor: pointer; margin-top: 15px; color: white; }
+#debug-log {
+    position:fixed; top:10px; left:10px;
+    z-index:10000;
+    background:rgba(0,0,0,.85);
+    padding:10px;
+    border-radius:6px;
+    font-family:monospace;
+    font-size:12px;
+    max-width:320px;
+    white-space:pre-line;
+    color:#00ff9c;
+}
 
-        #loader {
-            position: fixed; inset: 0; background: #0f1020; z-index: 9999;
-            display: flex; flex-direction: column; justify-content: center; align-items: center;
-        }
-        .spinner { width: 40px; height: 40px; border: 4px solid rgba(255,255,255,0.1); border-top-color: var(--accent-green); border-radius: 50%; animation: spin 1s infinite linear; }
-        @keyframes spin { to {transform: rotate(360deg);} }
-    </style>
+.app-header {
+    position:fixed; top:0; left:0; width:100%; height:60px;
+    background:rgba(21,21,37,.95);
+    display:flex; justify-content:center; align-items:center;
+    z-index:5000;
+    border-bottom:1px solid rgba(255,255,255,.1);
+}
+.logo-text { font-weight:900; letter-spacing:2px; }
+
+.guess-widget {
+    position:absolute; bottom:20px; right:20px;
+    width:320px; height:240px;
+    z-index:200;
+    background:#fff;
+    border-radius:12px;
+    overflow:hidden;
+}
+#guess-map { width:100%; height:100%; }
+#guess-btn {
+    position:absolute; bottom:15px; left:50%;
+    transform:translateX(-50%);
+    background:var(--green);
+    color:#fff; border:none;
+    padding:12px 40px;
+    border-radius:50px;
+    font-weight:900;
+    display:none;
+    cursor:pointer;
+}
+</style>
 </head>
+
 <body>
 
-    <div id="debug-log">System Init...</div>
+<div id="debug-log">Booting system…</div>
 
-    <div id="loader">
-        <div class="spinner"></div>
-        <p style="margin-top:15px; font-family:monospace; color:#888;">Establishing Link...</p>
-    </div>
+<div id="loader">
+    <div class="spinner"></div>
+    <p style="margin-top:15px; font-family:monospace; color:#888;">Loading Mapillary…</p>
+</div>
 
-    <div class="app-header"><div class="logo-text">GEOQUEST</div></div>
-    
-    <div id="mly"></div>
+<div class="app-header">
+    <div class="logo-text">GEOQUEST</div>
+</div>
 
-    <div class="hud-top">
-        <div class="timer-pill" id="timer">01:00</div>
-    </div>
+<div id="mly"></div>
 
-    <div class="guess-widget">
-        <div id="guess-map"></div>
-        <button id="guess-btn">GUESS</button>
-    </div>
+<div class="guess-widget">
+    <div id="guess-map"></div>
+    <button id="guess-btn">GUESS</button>
+</div>
 
-    <div id="result-modal">
-        <h1 style="color:white; margin-bottom:20px;">ROUND SUMMARY</h1>
-        <div class="result-card">
-            <div id="result-map"></div>
-            <div class="result-footer">
-                <h2 id="score-text" style="color:#ffcc00; margin:0;">0 PTS</h2>
-                <p id="dist-text" style="color:#ccc;">0 KM</p>
-                <button class="next-btn" onclick="nextRound()">NEXT ROUND</button>
-            </div>
-        </div>
-    </div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/mapillary-js@4.1.0/dist/mapillary.js"></script>
 
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://unpkg.com/mapillary-js@4.1.0/dist/mapillary.js"></script>
+<script>
+/* ================= CONFIG ================= */
 
-    <script>
-        // --- CONFIGURATION ---
-        const MLY_TOKEN = 'MLY|25703375639353602|2d5e13e8a59dbd70a82a07650d8b497c';
+const MLY_TOKEN = "MLY|25703375639353602|2d5e13e8a59dbd70a82a07650d8b497c";
 
-        // --- VERIFIED LOCATIONS (Guaranteed Mapillary Coverage) ---
-        const TARGETS = [
-            { lat: 40.7588, lng: -73.9851 }, // Times Square, NYC
-            { lat: 48.8584, lng: 2.2945 },   // Eiffel Tower, Paris
-            { lat: 51.5007, lng: -0.1246 },  // Big Ben, London
-            { lat: 35.6595, lng: 139.7005 }, // Shibuya, Tokyo
-            { lat: -33.8568, lng: 151.2153 } // Sydney Opera House
-        ];
+/* Ultra-safe, car-covered, Mapillary-dense areas */
+const TARGETS = [
+  { lat: 40.7589, lng: -73.9840 },  // Times Square street grid
+  { lat: 48.8572, lng: 2.2950 },    // Paris riverside roads
+  { lat: 51.5033, lng: -0.1196 },   // Westminster streets
+  { lat: 35.6597, lng: 139.7006 },  // Shibuya Crossing
+  { lat: -33.8586, lng: 151.2140 }  // Sydney Harbour roads
+];
 
-        let mlyViewer, guessMap, resultMap;
-        let userMarker = null;
-        let round = 1;
-        let currentLoc = null;
-        let realLoc = null;
-        let timerInt;
-        let timeLeft = 60;
+const SEARCH_RADII = [1000, 5000, 10000]; // meters
 
-        function log(msg) {
-            document.getElementById('debug-log').innerText = msg;
-            console.log(msg);
-        }
+/* ================= STATE ================= */
 
-        window.onload = async () => {
-            initLeaflet();
-            initMapillary();
-            await loadRound(1);
-        };
+let viewer, guessMap, userMarker;
+let roundIndex = 0;
+let realLocation = null;
 
-        function initMapillary() {
-            log("Init Mapillary...");
-            const { Viewer } = mapillary;
-            try {
-                mlyViewer = new Viewer({
-                    accessToken: MLY_TOKEN,
-                    container: 'mly',
-                    component: { cover: false, attribution: false }
-                });
-                window.addEventListener('resize', () => mlyViewer.resize());
-            } catch (e) {
-                log("Viewer Error: " + e.message);
+/* ================= UTIL ================= */
+
+function log(msg) {
+    document.getElementById("debug-log").textContent = msg;
+    console.log(msg);
+}
+
+function hideLoader() {
+    document.getElementById("loader").style.display = "none";
+}
+
+/* ================= MAPS ================= */
+
+function initGuessMap() {
+    guessMap = L.map("guess-map", { zoomControl:false }).setView([20,0], 2);
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png")
+        .addTo(guessMap);
+
+    guessMap.on("click", e => {
+        if (userMarker) guessMap.removeLayer(userMarker);
+        userMarker = L.marker(e.latlng).addTo(guessMap);
+        document.getElementById("guess-btn").style.display = "block";
+    });
+}
+
+/* ================= MAPILLARY ================= */
+
+function initViewer() {
+    viewer = new mapillary.Viewer({
+        accessToken: MLY_TOKEN,
+        container: "mly",
+        component: { cover:false, attribution:false }
+    });
+}
+
+/* ================= SEARCH ================= */
+
+async function searchImage(lat, lng) {
+    for (let r of SEARCH_RADII) {
+        log(`Searching ${r/1000} km radius…`);
+
+        const delta = r / 111000;
+        const bbox = [
+            lng - delta,
+            lat - delta,
+            lng + delta,
+            lat + delta
+        ].join(",");
+
+        const url =
+          `https://graph.mapillary.com/images?access_token=${MLY_TOKEN}` +
+          `&fields=id,geometry&bbox=${bbox}&limit=1`;
+
+        try {
+            const res = await fetch(url);
+            const json = await res.json();
+
+            if (json.data && json.data.length) {
+                const img = json.data[0];
+                realLocation = {
+                    lat: img.geometry.coordinates[1],
+                    lng: img.geometry.coordinates[0]
+                };
+                log("Image found ✔ Loading viewer…");
+                await viewer.moveToKey(img.id);
+                hideLoader();
+                return true;
             }
+        } catch (e) {
+            log("Fetch error, retrying wider…");
         }
+    }
+    return false;
+}
 
-        function initLeaflet() {
-            guessMap = L.map('guess-map', {zoomControl:false}).setView([20,0], 1);
-            L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png').addTo(guessMap);
-            
-            guessMap.on('click', (e) => {
-                if(userMarker) guessMap.removeLayer(userMarker);
-                userMarker = L.marker(e.latlng).addTo(guessMap);
-                document.getElementById('guess-btn').style.display = 'block';
-            });
-        }
+/* ================= GAME ================= */
 
-        async function loadRound(r) {
-            if(r > TARGETS.length) { alert("Game Over!"); location.reload(); return; }
-            round = r;
-            currentLoc = TARGETS[r-1];
-            
-            // UI Reset
-            document.getElementById('loader').style.display = 'flex';
-            document.getElementById('result-modal').style.display = 'none';
-            document.getElementById('guess-btn').style.display = 'none';
-            if(userMarker) guessMap.removeLayer(userMarker);
-            userMarker = null;
-            guessMap.setView([20,0], 1);
+async function loadRound() {
+    document.getElementById("guess-btn").style.display = "none";
+    if (userMarker) guessMap.removeLayer(userMarker);
+    userMarker = null;
 
-            log(`Hunting image near: ${currentLoc.lat.toFixed(4)}, ${currentLoc.lng.toFixed(4)}`);
+    if (roundIndex >= TARGETS.length) {
+        hideLoader();
+        log("All rounds completed.");
+        return;
+    }
 
-            // --- API SEARCH (5KM Radius - Massive Net) ---
-            // 0.05 degrees is approx 5.5km
-            const bbox = `${currentLoc.lng-0.05},${currentLoc.lat-0.05},${currentLoc.lng+0.05},${currentLoc.lat+0.05}`;
-            const url = `https://graph.mapillary.com/images?access_token=${MLY_TOKEN}&fields=id,geometry&bbox=${bbox}&limit=1`;
+    const target = TARGETS[roundIndex];
+    log(`Round ${roundIndex+1} → ${target.lat}, ${target.lng}`);
 
-            try {
-                const res = await fetch(url);
-                const data = await res.json();
+    const found = await searchImage(target.lat, target.lng);
 
-                if (data.error) {
-                    log("API ERROR: " + data.error.message);
-                    return;
-                }
+    if (!found) {
+        log("No image found. Skipping target…");
+        roundIndex++;
+        loadRound();
+    }
+}
 
-                if (data.data && data.data.length > 0) {
-                    const imgId = data.data[0].id;
-                    const coords = data.data[0].geometry.coordinates;
-                    realLoc = { lat: coords[1], lon: coords[0] };
-                    
-                    log(`Found Image: ${imgId}. Loading...`);
-                    
-                    await mlyViewer.moveToKey(imgId);
-                    document.getElementById('loader').style.display = 'none';
-                    log("Round Started!");
-                    startTimer();
-                } else {
-                    log("No images found in 5km radius. Skipping...");
-                    setTimeout(() => loadRound(r+1), 2000);
-                }
-            } catch (e) {
-                log("Fetch Failed: " + e.message);
-                console.error(e);
-            }
-        }
+/* ================= START ================= */
 
-        function startTimer() {
-            clearInterval(timerInt);
-            timeLeft = 60;
-            document.getElementById('timer').innerText = "01:00";
-            timerInt = setInterval(() => {
-                timeLeft--;
-                document.getElementById('timer').innerText = `00:${timeLeft<10?'0'+timeLeft:timeLeft}`;
-                if(timeLeft<=0) resolveRound(null);
-            }, 1000);
-        }
+window.onload = async () => {
+    initGuessMap();
+    initViewer();
+    await loadRound();
+};
+</script>
 
-        document.getElementById('guess-btn').addEventListener('click', () => {
-            if(userMarker) resolveRound(userMarker.getLatLng());
-        });
-
-        function resolveRound(userLatLng) {
-            clearInterval(timerInt);
-            document.getElementById('result-modal').style.display = 'flex';
-            
-            if(!resultMap) {
-                resultMap = L.map('result-map', {zoomControl:false}).setView([0,0], 2);
-                L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png').addTo(resultMap);
-            }
-            setTimeout(() => resultMap.invalidateSize(), 100);
-            
-            resultMap.eachLayer(l => { if(l.toGeoJSON) resultMap.removeLayer(l); });
-
-            const target = L.latLng(realLoc.lat, realLoc.lon); 
-            L.marker(target).addTo(resultMap).bindPopup("Actual Spot").openPopup();
-
-            let dist = 0, pts = 0;
-            if(userLatLng) {
-                L.marker(userLatLng).addTo(resultMap);
-                L.polyline([target, userLatLng], {color:'orange', dashArray:'5,5'}).addTo(resultMap);
-                resultMap.fitBounds(L.latLngBounds(target, userLatLng).pad(0.2));
-                dist = Math.round(target.distanceTo(userLatLng)/1000);
-                pts = Math.max(0, 5000 - dist);
-            } else {
-                resultMap.setView(target, 5);
-            }
-
-            document.getElementById('score-text').innerText = pts + " PTS";
-            document.getElementById('dist-text').innerText = dist + " KM";
-        }
-
-        function nextRound() { loadRound(round + 1); }
-    </script>
 </body>
 </html>
