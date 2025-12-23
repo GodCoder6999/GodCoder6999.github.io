@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GeoQuest: Urban Explorer</title>
+    <title>GeoQuest: Final Fix</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link href="https://unpkg.com/mapillary-js@4.1.0/dist/mapillary.css" rel="stylesheet" />
@@ -13,35 +13,31 @@
         :root { --bg-deep: #0f1020; --accent-green: #6bd451; }
         body { margin: 0; padding: 0; font-family: 'Outfit', sans-serif; background: var(--bg-deep); color: white; overflow: hidden; }
 
-        /* LOGS */
-        #status-log {
-            position: fixed; top: 70px; left: 50%; transform: translateX(-50%);
-            background: rgba(0,0,0,0.8); padding: 8px 20px; border-radius: 20px;
-            font-size: 0.9rem; z-index: 6000; pointer-events: none; border: 1px solid #444;
-            white-space: nowrap;
+        /* DEBUG LOG - VISIBLE ON SCREEN */
+        #debug-log {
+            position: fixed; top: 10px; left: 10px; z-index: 10000;
+            background: rgba(0,0,0,0.8); padding: 10px; border-radius: 5px;
+            font-family: monospace; font-size: 12px; color: #0f0; pointer-events: none;
+            max-width: 300px;
         }
 
-        /* VIEWER */
         #mly { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; background: #000; }
 
-        /* HUD */
         .app-header {
             position: fixed; top: 0; left: 0; width: 100%; height: 60px;
             background: rgba(21, 21, 37, 0.95); display: flex; align-items: center; justify-content: center; z-index: 5000;
             border-bottom: 1px solid rgba(255,255,255,0.1);
         }
-        .logo-text { font-weight: 900; letter-spacing: 2px; text-transform: uppercase; }
+        .logo-text { font-weight: 900; letter-spacing: 2px; }
 
-        .hud-top { position: absolute; top: 90px; right: 20px; z-index: 100; pointer-events: none; }
+        .hud-top { position: absolute; top: 80px; width: 100%; z-index: 100; pointer-events: none; display: flex; justify-content: center; }
         .timer-pill { background: #5b3bb8; padding: 10px 30px; border-radius: 30px; font-weight: 900; font-size: 1.5rem; box-shadow: 0 5px 15px rgba(0,0,0,0.4); }
 
-        /* WIDGET */
         .guess-widget {
             position: absolute; bottom: 20px; right: 20px; width: 320px; height: 240px; z-index: 200;
             background: #fff; border: 4px solid white; border-radius: 12px;
-            display: flex; flex-direction: column; transition: transform 0.2s;
+            display: flex; flex-direction: column;
         }
-        .guess-widget:hover { transform: scale(1.02); }
         #guess-map { flex: 1; cursor: crosshair; }
         #guess-btn {
             position: absolute; bottom: 15px; left: 50%; transform: translateX(-50%);
@@ -49,7 +45,6 @@
             font-weight: 900; cursor: pointer; display: none; z-index: 1001;
         }
 
-        /* RESULT */
         #result-modal {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(15, 16, 32, 0.98); z-index: 2000;
@@ -60,7 +55,6 @@
         .result-footer { padding: 20px; text-align: center; }
         .next-btn { background: var(--accent-green); border: none; padding: 15px 40px; border-radius: 50px; font-weight: 900; cursor: pointer; margin-top: 15px; color: white; }
 
-        /* LOADING */
         #loader {
             position: fixed; inset: 0; background: #0f1020; z-index: 9999;
             display: flex; flex-direction: column; justify-content: center; align-items: center;
@@ -71,8 +65,12 @@
 </head>
 <body>
 
-    <div id="loader"><div class="spinner"></div></div>
-    <div id="status-log">Connecting to World Database...</div>
+    <div id="debug-log">System Init...</div>
+
+    <div id="loader">
+        <div class="spinner"></div>
+        <p style="margin-top:15px; font-family:monospace; color:#888;">Establishing Link...</p>
+    </div>
 
     <div class="app-header"><div class="logo-text">GEOQUEST</div></div>
     
@@ -103,48 +101,50 @@
     <script src="https://unpkg.com/mapillary-js@4.1.0/dist/mapillary.js"></script>
 
     <script>
-        // --- 1. CONFIGURATION ---
-        const MLY_TOKEN = 'MLY|25703375639353602|2d5e13e8a59dbd70a82a07650d8b497c'; // User Token
+        // --- CONFIGURATION ---
+        const MLY_TOKEN = 'MLY|25703375639353602|2d5e13e8a59dbd70a82a07650d8b497c';
 
-        // --- 2. REGIONS (Bounding Boxes for Cities) ---
-        // Format: [minLon, minLat, maxLon, maxLat]
-        // This lets us pick a random spot ANYWHERE in these cities
-        const REGIONS = [
-            { name: "London", bbox: [-0.2, 51.45, 0.0, 51.55] },
-            { name: "New York", bbox: [-74.02, 40.70, -73.93, 40.80] },
-            { name: "Paris", bbox: [2.25, 48.82, 2.40, 48.90] },
-            { name: "Tokyo", bbox: [139.68, 35.65, 139.80, 35.72] },
-            { name: "Sydney", bbox: [151.15, -33.90, 151.25, -33.85] },
-            { name: "San Francisco", bbox: [-122.50, 37.70, -122.38, 37.80] },
-            { name: "Berlin", bbox: [13.30, 52.48, 13.45, 52.55] }
+        // --- VERIFIED LOCATIONS (Guaranteed Mapillary Coverage) ---
+        const TARGETS = [
+            { lat: 40.7588, lng: -73.9851 }, // Times Square, NYC
+            { lat: 48.8584, lng: 2.2945 },   // Eiffel Tower, Paris
+            { lat: 51.5007, lng: -0.1246 },  // Big Ben, London
+            { lat: 35.6595, lng: 139.7005 }, // Shibuya, Tokyo
+            { lat: -33.8568, lng: 151.2153 } // Sydney Opera House
         ];
 
         let mlyViewer, guessMap, resultMap;
         let userMarker = null;
         let round = 1;
-        let currentLoc = null; // The real location of the image
+        let currentLoc = null;
+        let realLoc = null;
         let timerInt;
         let timeLeft = 60;
 
-        function updateStatus(msg) {
-            document.getElementById('status-log').innerText = msg;
+        function log(msg) {
+            document.getElementById('debug-log').innerText = msg;
             console.log(msg);
         }
 
         window.onload = async () => {
             initLeaflet();
             initMapillary();
-            await startNewGame();
+            await loadRound(1);
         };
 
         function initMapillary() {
+            log("Init Mapillary...");
             const { Viewer } = mapillary;
-            mlyViewer = new Viewer({
-                accessToken: MLY_TOKEN,
-                container: 'mly',
-                component: { cover: false, attribution: false }
-            });
-            window.addEventListener('resize', () => mlyViewer.resize());
+            try {
+                mlyViewer = new Viewer({
+                    accessToken: MLY_TOKEN,
+                    container: 'mly',
+                    component: { cover: false, attribution: false }
+                });
+                window.addEventListener('resize', () => mlyViewer.resize());
+            } catch (e) {
+                log("Viewer Error: " + e.message);
+            }
         }
 
         function initLeaflet() {
@@ -158,12 +158,11 @@
             });
         }
 
-        async function startNewGame() {
-            await loadRandomLocation();
-        }
-
-        // --- 3. THE RANDOM GENERATOR ---
-        async function loadRandomLocation() {
+        async function loadRound(r) {
+            if(r > TARGETS.length) { alert("Game Over!"); location.reload(); return; }
+            round = r;
+            currentLoc = TARGETS[r-1];
+            
             // UI Reset
             document.getElementById('loader').style.display = 'flex';
             document.getElementById('result-modal').style.display = 'none';
@@ -172,42 +171,40 @@
             userMarker = null;
             guessMap.setView([20,0], 1);
 
-            // Retry loop (Recursion) until image is found
-            const region = REGIONS[Math.floor(Math.random() * REGIONS.length)];
-            const randomLat = region.bbox[1] + Math.random() * (region.bbox[3] - region.bbox[1]);
-            const randomLon = region.bbox[0] + Math.random() * (region.bbox[2] - region.bbox[0]);
+            log(`Hunting image near: ${currentLoc.lat.toFixed(4)}, ${currentLoc.lng.toFixed(4)}`);
 
-            updateStatus(`Scanning ${region.name}...`);
-
-            // Search 1000m radius around random point
-            const bbox = `${randomLon-0.01},${randomLat-0.01},${randomLon+0.01},${randomLat+0.01}`;
+            // --- API SEARCH (5KM Radius - Massive Net) ---
+            // 0.05 degrees is approx 5.5km
+            const bbox = `${currentLoc.lng-0.05},${currentLoc.lat-0.05},${currentLoc.lng+0.05},${currentLoc.lat+0.05}`;
             const url = `https://graph.mapillary.com/images?access_token=${MLY_TOKEN}&fields=id,geometry&bbox=${bbox}&limit=1`;
 
             try {
                 const res = await fetch(url);
                 const data = await res.json();
 
+                if (data.error) {
+                    log("API ERROR: " + data.error.message);
+                    return;
+                }
+
                 if (data.data && data.data.length > 0) {
-                    // FOUND ONE!
                     const imgId = data.data[0].id;
                     const coords = data.data[0].geometry.coordinates;
-                    currentLoc = { lat: coords[1], lon: coords[0] };
+                    realLoc = { lat: coords[1], lon: coords[0] };
                     
-                    updateStatus("Loading Street View...");
+                    log(`Found Image: ${imgId}. Loading...`);
+                    
                     await mlyViewer.moveToKey(imgId);
-                    
                     document.getElementById('loader').style.display = 'none';
-                    updateStatus(`Round ${round}: Where is this?`);
+                    log("Round Started!");
                     startTimer();
                 } else {
-                    // FAILED (Empty spot in city) -> Retry instantly
-                    console.log("Empty spot, retrying...");
-                    loadRandomLocation(); 
+                    log("No images found in 5km radius. Skipping...");
+                    setTimeout(() => loadRound(r+1), 2000);
                 }
             } catch (e) {
-                console.error("API Error", e);
-                // Retry if API hiccups
-                setTimeout(loadRandomLocation, 1000);
+                log("Fetch Failed: " + e.message);
+                console.error(e);
             }
         }
 
@@ -238,8 +235,8 @@
             
             resultMap.eachLayer(l => { if(l.toGeoJSON) resultMap.removeLayer(l); });
 
-            const target = L.latLng(currentLoc.lat, currentLoc.lon); 
-            L.marker(target).addTo(resultMap).bindPopup("Correct Location").openPopup();
+            const target = L.latLng(realLoc.lat, realLoc.lon); 
+            L.marker(target).addTo(resultMap).bindPopup("Actual Spot").openPopup();
 
             let dist = 0, pts = 0;
             if(userLatLng) {
@@ -256,10 +253,7 @@
             document.getElementById('dist-text').innerText = dist + " KM";
         }
 
-        function nextRound() {
-            round++;
-            loadRandomLocation();
-        }
+        function nextRound() { loadRound(round + 1); }
     </script>
 </body>
 </html>
