@@ -151,10 +151,11 @@ function initGuessMap() {
 /* ================= MAPILLARY ================= */
 
 function initViewer() {
-    viewer = new mapillary.Viewer({
-        container:"mly",
-        accessToken:MLY_TOKEN,
-        component:{ cover:false, attribution:false }
+    const { Viewer } = mapillary;
+    viewer = new Viewer({
+        container: "mly",
+        accessToken: MLY_TOKEN,
+        component: { cover:false, attribution:false }
     });
 }
 
