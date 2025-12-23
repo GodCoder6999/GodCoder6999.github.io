@@ -2,525 +2,90 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>GeoQuest – Stable Build</title>
+<title>Street Guess</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<link rel="stylesheet" href="https://unpkg.com/mapillary-js@4.1.0/dist/mapillary.css">
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;700;900&display=swap" rel="stylesheet">
 
 <style>
-:root { --bg:#0f1020; --green:#6bd451; }
-body { margin:0; background:var(--bg); color:#fff; font-family:Outfit; overflow:hidden; }
-
-#mly { position:absolute; inset:0; background:#000; }
-
-#loader {
-    position:fixed; inset:0;
-    display:flex; flex-direction:column;
-    justify-content:center; align-items:center;
-    background:#0f1020;
-    z-index:9999;
+body { margin:0; background:#0f1020; color:#fff; font-family:sans-serif; }
+#viewer {
+    position:absolute;
+    top:0; left:0;
+    width:100%; height:100%;
+    border:none;
 }
-.spinner {
-    width:40px; height:40px;
-    border:4px solid rgba(255,255,255,.15);
-    border-top-color:var(--green);
-    border-radius:50%;
-    animation:spin 1s linear infinite;
-}
-@keyframes spin { to { transform:rotate(360deg); } }
-
-#debug-log {
-    position:fixed; top:10px; left:10px;
-    background:rgba(0,0,0,.85);
-    padding:10px;
-    border-radius:6px;
-    font-family:monospace;
-    font-size:12px;
-    max-width:320px;
-    white-space:pre-line;
-    color:#00ff9c;
-    z-index:10000;
-}
-
-.app-header {
-    position:fixed; top:0; left:0;
-    width:100%; height:60px;
-    display:flex; justify-content:center; align-items:center;
-    background:rgba(21,21,37,.95);
-    border-bottom:1px solid rgba(255,255,255,.1);
-    z-index:5000;
-}
-.logo-text { font-weight:900; letter-spacing:2px; }
-
-.guess-widget {
-    position:absolute; bottom:20px; right:20px;
+#map {
+    position:absolute;
+    bottom:20px; right:20px;
     width:320px; height:240px;
-    background:#fff;
     border-radius:12px;
     overflow:hidden;
-    z-index:200;
-}
-#guess-map { width:100%; height:100%; }
-#guess-btn {
-    position:absolute; bottom:15px; left:50%;
-    transform:translateX(-50%);
-    background:var(--green);
-    border:none;
-    color:#fff;
-    padding:12px 40px;
-    border-radius:50px;
-    font-weight:900;
-    cursor:pointer;
-    display:none;
+    z-index:10;
 }
 </style>
 </head>
 
 <body>
 
-<div id="debug-log">Booting…</div>
-
-<div id="loader">
-    <div class="spinner"></div>
-    <p style="margin-top:15px;font-family:monospace;color:#888;">Loading street view…</p>
-</div>
-
-<div class="app-header">
-    <div class="logo-text">GEOQUEST</div>
-</div>
-
-<div id="mly"></div>
-
-<div class="guess-widget">
-    <div id="guess-map"></div>
-    <button id="guess-btn">GUESS</button>
-</div>
+<iframe id="viewer"></iframe>
+<div id="map"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://unpkg.com/mapillary-js@4.1.0/dist/mapillary.js"></script>
 
 <script>
-/* ================= CONFIG ================= */
+const TOKEN = "MLY|25703375639353602|2d5e13e8a59dbd70a82a07650d8b497c";
 
-const MLY_TOKEN = "MLY|25703375639353602|2d5e13e8a59dbd70a82a07650d8b497c";
-
+// Famous, guaranteed street-level areas
 const TARGETS = [
-    { lat:40.7589, lng:-73.9840 },  // Times Square
-    { lat:48.8572, lng:2.2950 },    // Paris streets
-    { lat:51.5033, lng:-0.1196 },   // Westminster
-    { lat:35.6597, lng:139.7006 },  // Shibuya
-    { lat:-33.8586, lng:151.2140 }  // Sydney Harbour
+  { lat:40.7589, lng:-73.9840 },  // NYC
+  { lat:48.8572, lng:2.2950 },    // Paris
+  { lat:35.6597, lng:139.7006 },  // Tokyo
+  { lat:51.5033, lng:-0.1196 },   // London
+  { lat:-33.8586, lng:151.2140 }  // Sydney
 ];
 
-const RADII = [1000, 5000, 10000]; // meters
+async function loadRandomStreetView() {
+    const t = TARGETS[Math.floor(Math.random() * TARGETS.length)];
+    const d = 0.05; // ~5km
 
-/* ================= STATE ================= */
+    const bbox = [
+        t.lng - d, t.lat - d,
+        t.lng + d, t.lat + d
+    ].join(",");
 
-let viewer, guessMap, userMarker;
-let roundIndex = 0;
+    const url =
+        `https://graph.mapillary.com/images` +
+        `?access_token=${TOKEN}` +
+        `&fields=id` +
+        `&bbox=${bbox}` +
+        `&limit=50`;
 
-/* ================= UTILS ================= */
+    const res = await fetch(url);
+    const json = await res.json();
 
-function log(msg) {
-    document.getElementById("debug-log").textContent = msg;
-    console.log(msg);
-}
-function hideLoader() {
-    document.getElementById("loader").style.display = "none";
-}
-function showLoader() {
-    document.getElementById("loader").style.display = "flex";
-}
-
-/* ================= MAPS ================= */
-
-function initGuessMap() {
-    guessMap = L.map("guess-map", { zoomControl:false }).setView([20,0], 2);
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png")
-        .addTo(guessMap);
-
-    guessMap.on("click", e => {
-        if (userMarker) guessMap.removeLayer(userMarker);
-        userMarker = L.marker(e.latlng).addTo(guessMap);
-        document.getElementById("guess-btn").style.display = "block";
-    });
-}
-
-/* ================= MAPILLARY ================= */
-
-function initViewer() {
-    const { Viewer } = mapillary;
-    viewer = new Viewer({
-        container: "mly",
-        accessToken: MLY_TOKEN,
-        component: { cover:false, attribution:false }
-    });
-}
-
-/* ================= SAFETY ================= */
-
-async function safeMoveToKey(key, timeout = 8000) {
-    return Promise.race([
-        viewer.moveToKey(key),
-        new Promise((_, reject) =>
-            setTimeout(() => reject(new Error("Mapillary timeout")), timeout)
-        )
-    ]);
-}
-
-/* ================= SEARCH ================= */
-
-async function findAndLoadImage(lat, lng) {
-    for (const r of RADII) {
-        log(`Searching ${r/1000} km radius…`);
-
-        const d = r / 111000;
-        const bbox = [
-            lng - d, lat - d,
-            lng + d, lat + d
-        ].join(",");
-
-        const url =
-            `https://graph.mapillary.com/images` +
-            `?access_token=${MLY_TOKEN}` +
-            `&fields=id` +
-            `&bbox=${bbox}` +
-            `&limit=10`;
-
-        try {
-            const res = await fetch(url);
-            const json = await res.json();
-
-            if (!json.data || !json.data.length) continue;
-
-            const img = json.data[Math.floor(Math.random() * json.data.length)];
-
-            log("Image found. Loading viewer…");
-
-            try {
-                await safeMoveToKey(img.id);
-                hideLoader();
-                log("Viewer loaded. Round ready.");
-                return true;
-            } catch {
-                log("Viewer failed. Trying another radius…");
-            }
-        } catch {
-            log("Fetch error. Expanding radius…");
-        }
-    }
-    return false;
-}
-
-/* ================= GAME FLOW ================= */
-
-async function loadRound() {
-    showLoader();
-    document.getElementById("guess-btn").style.display = "none";
-    if (userMarker) guessMap.removeLayer(userMarker);
-    userMarker = null;
-
-    if (roundIndex >= TARGETS.length) {
-        hideLoader();
-        log("Game finished.");
+    if (!json.data || !json.data.length) {
+        alert("No images found, reload.");
         return;
     }
 
-    const t = TARGETS[roundIndex];
-    log(`Round ${roundIndex + 1}`);
+    const img = json.data[Math.floor(Math.random() * json.data.length)];
 
-    const success = await findAndLoadImage(t.lat, t.lng);
-
-    if (!success) {
-        log("Skipping location.");
-        roundIndex++;
-        loadRound();
-    }
+    // EMBED VIEWER — SIMPLE, STABLE
+    document.getElementById("viewer").src =
+        `https://www.mapillary.com/embed?image_key=${img.id}&style=photo`;
 }
 
-/* ================= FAILSAFE ================= */
+// Guess map
+const map = L.map("map", { zoomControl:false }).setView([20,0], 2);
+L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png")
+  .addTo(map);
 
-setTimeout(() => {
-    if (document.getElementById("loader").style.display !== "none") {
-        log("Failsafe triggered. Recovering…");
-        hideLoader();
-        roundIndex++;
-        loadRound();
-    }
-}, 12000);
+map.on("click", e => {
+    L.marker(e.latlng).addTo(map);
+});
 
-/* ================= START ================= */
-
-window.onload = () => {
-    initGuessMap();
-    initViewer();
-    loadRound();
-};
-</script>
-
-</body>
-</html>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<title>GeoQuest – Stable Build</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<link rel="stylesheet" href="https://unpkg.com/mapillary-js@4.1.0/dist/mapillary.css">
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;700;900&display=swap" rel="stylesheet">
-
-<style>
-:root { --bg:#0f1020; --green:#6bd451; }
-body { margin:0; background:var(--bg); color:#fff; font-family:Outfit; overflow:hidden; }
-
-#mly { position:absolute; inset:0; background:#000; }
-
-#loader {
-    position:fixed; inset:0;
-    display:flex; flex-direction:column;
-    justify-content:center; align-items:center;
-    background:#0f1020;
-    z-index:9999;
-}
-.spinner {
-    width:40px; height:40px;
-    border:4px solid rgba(255,255,255,.15);
-    border-top-color:var(--green);
-    border-radius:50%;
-    animation:spin 1s linear infinite;
-}
-@keyframes spin { to { transform:rotate(360deg); } }
-
-#debug-log {
-    position:fixed; top:10px; left:10px;
-    background:rgba(0,0,0,.85);
-    padding:10px;
-    border-radius:6px;
-    font-family:monospace;
-    font-size:12px;
-    max-width:320px;
-    white-space:pre-line;
-    color:#00ff9c;
-    z-index:10000;
-}
-
-.app-header {
-    position:fixed; top:0; left:0;
-    width:100%; height:60px;
-    display:flex; justify-content:center; align-items:center;
-    background:rgba(21,21,37,.95);
-    border-bottom:1px solid rgba(255,255,255,.1);
-    z-index:5000;
-}
-.logo-text { font-weight:900; letter-spacing:2px; }
-
-.guess-widget {
-    position:absolute; bottom:20px; right:20px;
-    width:320px; height:240px;
-    background:#fff;
-    border-radius:12px;
-    overflow:hidden;
-    z-index:200;
-}
-#guess-map { width:100%; height:100%; }
-#guess-btn {
-    position:absolute; bottom:15px; left:50%;
-    transform:translateX(-50%);
-    background:var(--green);
-    border:none;
-    color:#fff;
-    padding:12px 40px;
-    border-radius:50px;
-    font-weight:900;
-    cursor:pointer;
-    display:none;
-}
-</style>
-</head>
-
-<body>
-
-<div id="debug-log">Booting…</div>
-
-<div id="loader">
-    <div class="spinner"></div>
-    <p style="margin-top:15px;font-family:monospace;color:#888;">Loading street view…</p>
-</div>
-
-<div class="app-header">
-    <div class="logo-text">GEOQUEST</div>
-</div>
-
-<div id="mly"></div>
-
-<div class="guess-widget">
-    <div id="guess-map"></div>
-    <button id="guess-btn">GUESS</button>
-</div>
-
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://unpkg.com/mapillary-js@4.1.0/dist/mapillary.js"></script>
-
-<script>
-/* ================= CONFIG ================= */
-
-const MLY_TOKEN = "MLY|25703375639353602|2d5e13e8a59dbd70a82a07650d8b497c";
-
-const TARGETS = [
-    { lat:40.7589, lng:-73.9840 },  // Times Square
-    { lat:48.8572, lng:2.2950 },    // Paris streets
-    { lat:51.5033, lng:-0.1196 },   // Westminster
-    { lat:35.6597, lng:139.7006 },  // Shibuya
-    { lat:-33.8586, lng:151.2140 }  // Sydney Harbour
-];
-
-const RADII = [1000, 5000, 10000]; // meters
-
-/* ================= STATE ================= */
-
-let viewer, guessMap, userMarker;
-let roundIndex = 0;
-
-/* ================= UTILS ================= */
-
-function log(msg) {
-    document.getElementById("debug-log").textContent = msg;
-    console.log(msg);
-}
-function hideLoader() {
-    document.getElementById("loader").style.display = "none";
-}
-function showLoader() {
-    document.getElementById("loader").style.display = "flex";
-}
-
-/* ================= MAPS ================= */
-
-function initGuessMap() {
-    guessMap = L.map("guess-map", { zoomControl:false }).setView([20,0], 2);
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png")
-        .addTo(guessMap);
-
-    guessMap.on("click", e => {
-        if (userMarker) guessMap.removeLayer(userMarker);
-        userMarker = L.marker(e.latlng).addTo(guessMap);
-        document.getElementById("guess-btn").style.display = "block";
-    });
-}
-
-/* ================= MAPILLARY ================= */
-
-function initViewer() {
-    viewer = new mapillary.Viewer({
-        container:"mly",
-        accessToken:MLY_TOKEN,
-        component:{ cover:false, attribution:false }
-    });
-}
-
-/* ================= SAFETY ================= */
-
-async function safeMoveToKey(key, timeout = 8000) {
-    return Promise.race([
-        viewer.moveToKey(key),
-        new Promise((_, reject) =>
-            setTimeout(() => reject(new Error("Mapillary timeout")), timeout)
-        )
-    ]);
-}
-
-/* ================= SEARCH ================= */
-
-async function findAndLoadImage(lat, lng) {
-    for (const r of RADII) {
-        log(`Searching ${r/1000} km radius…`);
-
-        const d = r / 111000;
-        const bbox = [
-            lng - d, lat - d,
-            lng + d, lat + d
-        ].join(",");
-
-        const url =
-            `https://graph.mapillary.com/images` +
-            `?access_token=${MLY_TOKEN}` +
-            `&fields=id` +
-            `&bbox=${bbox}` +
-            `&limit=10`;
-
-        try {
-            const res = await fetch(url);
-            const json = await res.json();
-
-            if (!json.data || !json.data.length) continue;
-
-            const img = json.data[Math.floor(Math.random() * json.data.length)];
-
-            log("Image found. Loading viewer…");
-
-            try {
-                await safeMoveToKey(img.id);
-                hideLoader();
-                log("Viewer loaded. Round ready.");
-                return true;
-            } catch {
-                log("Viewer failed. Trying another radius…");
-            }
-        } catch {
-            log("Fetch error. Expanding radius…");
-        }
-    }
-    return false;
-}
-
-/* ================= GAME FLOW ================= */
-
-async function loadRound() {
-    showLoader();
-    document.getElementById("guess-btn").style.display = "none";
-    if (userMarker) guessMap.removeLayer(userMarker);
-    userMarker = null;
-
-    if (roundIndex >= TARGETS.length) {
-        hideLoader();
-        log("Game finished.");
-        return;
-    }
-
-    const t = TARGETS[roundIndex];
-    log(`Round ${roundIndex + 1}`);
-
-    const success = await findAndLoadImage(t.lat, t.lng);
-
-    if (!success) {
-        log("Skipping location.");
-        roundIndex++;
-        loadRound();
-    }
-}
-
-/* ================= FAILSAFE ================= */
-
-setTimeout(() => {
-    if (document.getElementById("loader").style.display !== "none") {
-        log("Failsafe triggered. Recovering…");
-        hideLoader();
-        roundIndex++;
-        loadRound();
-    }
-}, 12000);
-
-/* ================= START ================= */
-
-window.onload = () => {
-    initGuessMap();
-    initViewer();
-    loadRound();
-};
+loadRandomStreetView();
 </script>
 
 </body>
